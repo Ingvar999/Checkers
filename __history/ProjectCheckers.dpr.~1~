@@ -1,0 +1,13 @@
+program ProjectCheckers;
+
+uses
+  Forms,
+  MenuUnit in 'MenuUnit.pas' {Menu};
+
+{$R *.res}
+
+begin
+  Application.Initialize;
+  Application.CreateForm(TMenu, Menu);
+  Application.Run;
+end.

@@ -1,0 +1,15 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<BorlandProject>
+	<Transactions>
+    <Transaction>2017.02.13 23:01:47.616.pas,C:\Users\snajp\Documents\Borland Studio Projects\Unit1.pas=C:\Users\snajp\OneDrive\Проги\Checkers\MenuUnit.pas</Transaction>
+    <Transaction>2017.02.13 23:01:47.616.dfm,C:\Users\snajp\Documents\Borland Studio Projects\Unit1.dfm=C:\Users\snajp\OneDrive\Проги\Checkers\MenuUnit.dfm</Transaction>
+    <Transaction>2017.02.13 23:02:03.485.bdsproj,C:\Users\snajp\Documents\Borland Studio Projects\Project1.bdsproj=C:\Users\snajp\OneDrive\Проги\Checkers\ProjectCheckers.bdsproj</Transaction>
+    <Transaction>2017.04.11 10:34:36.924.pas,C:\Users\snajp\OneDrive\Проги\Checkers\Unit1.pas=C:\Users\snajp\OneDrive\Проги\Checkers\ClockUnit.pas</Transaction>
+    <Transaction>2017.04.11 10:34:36.930.dfm,C:\Users\snajp\OneDrive\Проги\Checkers\Unit1.dfm=C:\Users\snajp\OneDrive\Проги\Checkers\ClockUnit.dfm</Transaction>
+    <Transaction>2017.04.11 15:42:21.617.pas,C:\Users\snajp\OneDrive\Проги\Checkers\Unit1.pas=C:\Users\snajp\OneDrive\Проги\Checkers\CheckersLib.pas</Transaction>
+    <Transaction>2017.04.13 01:40:03.926.pas,C:\Users\snajp\OneDrive\Проги\Checkers\Unit1.pas=C:\Users\snajp\OneDrive\Проги\Checkers\UnitListGames.pas</Transaction>
+    <Transaction>2017.04.13 01:40:03.926.dfm,C:\Users\snajp\OneDrive\Проги\Checkers\Unit1.dfm=C:\Users\snajp\OneDrive\Проги\Checkers\UnitListGames.dfm</Transaction>
+    <Transaction>2017.05.18 10:53:34.888.pas,C:\Users\snajp\OneDrive\Проги\Checkers\Unit1.pas=C:\Users\snajp\OneDrive\Проги\Checkers\ReadNameUnit.pas</Transaction>
+    <Transaction>2017.05.18 10:53:34.913.dfm,C:\Users\snajp\OneDrive\Проги\Checkers\Unit1.dfm=C:\Users\snajp\OneDrive\Проги\Checkers\ReadNameUnit.dfm</Transaction>
+  </Transactions>
+</BorlandProject>

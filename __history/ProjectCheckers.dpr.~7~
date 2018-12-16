@@ -1,0 +1,16 @@
+program ProjectCheckers;
+
+uses
+  Forms,
+  MenuUnit in 'MenuUnit.pas' {CheckersMenu},
+  BoardCreateUnit in 'BoardCreateUnit.pas' {Checkers},
+  ClockUnit in 'ClockUnit.pas' {FormClock},
+  CheckersLib in 'CheckersLib.pas';
+
+{$R *.res}
+
+begin
+  Application.Initialize;
+  Application.CreateForm(TCheckersMenu, CheckersMenu);
+  Application.Run;
+end.

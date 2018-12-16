@@ -1,0 +1,182 @@
+unit UnitListGames;
+
+interface
+
+uses
+   Windows, Messages, SysUtils, Variants, Classes, Graphics, Controls, Forms,
+   Dialogs, StdCtrls, Grids, ExtCtrls;
+
+type
+   TFormListGames = class(TForm)
+      sgListGames: TStringGrid;
+      Choose: TImage;
+      ChooseLabel: TLabel;
+      UpData: TImage;
+      UpDataLabel: TLabel;
+      Remove: TImage;
+      RemoveLabel: TLabel;
+    procedure FormActivate(Sender: TObject);
+      procedure RemoveLabelClick(Sender: TObject);
+      procedure RemoveClick(Sender: TObject);
+      procedure ChooseLabelClick(Sender: TObject);
+      procedure ChooseClick(Sender: TObject);
+      procedure UpDataLabelClick(Sender: TObject);
+      procedure UpDataClick(Sender: TObject);
+      procedure FormShow(Sender: TObject);
+      procedure FormCreate(Sender: TObject);
+   private 
+    { Private declarations }
+   public  
+     { Public declarations }
+   end;
+
+var
+   FormListGames: TFormListGames;
+
+implementation
+
+{$R *.dfm}
+
+uses
+   BoardCreateUnit, MenuUnit, CheckersLib;
+
+procedure TFormListGames.ChooseClick(Sender: TObject);
+var
+   i: byte;
+begin
+   with sgListGames do
+   begin
+      if Cells[0, row] <> '' then
+      begin
+         i := StrToInt(Cells[0, row][6]) - 1;
+         Checkers[i].Visible := true;
+         Checkers[i].Active := true;
+         with Checkers[i].FormClock do
+         begin
+            TimerClock.Enabled := true;
+            StartTime := Time - StrToTime(TimeLabel.Caption);
+            Visible := true;
+         end;
+         Checkers[i].BringToFront;
+      end;
+   end;
+end;
+
+procedure TFormListGames.ChooseLabelClick(Sender: TObject);
+begin
+   ChooseClick(nil);
+end;
+
+procedure TFormListGames.FormActivate(Sender: TObject);
+begin
+FormShow(nil);
+end;
+
+procedure TFormListGames.FormCreate(Sender: TObject);
+begin
+   with sgListGames do
+   begin
+      ColCount := 5;
+      RowCount := 2;
+      DefaultColWidth := 90;
+      Cells[0, 0] := 'Имя';
+      Cells[1, 0] := 'Режим игры';
+      Cells[2, 0] := 'Статус';
+      Cells[3, 0] := 'Длительность';
+      Cells[4, 0] := 'Время начала';
+   end;
+   Choose.Picture.LoadFromFile('Button5.bmp');
+   Choose.Transparent := true;
+   ChooseLabel.Font.Color := Gold;
+   UpData.Picture.LoadFromFile('Button5.bmp');
+   UpData.Transparent := true;
+   UpDataLabel.Font.Color := Gold;
+   Remove.Picture.LoadFromFile('Button5.bmp');
+   Remove.Transparent := true;
+   RemoveLabel.Font.Color := Gold;
+end;
+
+procedure TFormListGames.FormShow(Sender: TObject);
+var
+   n, i, number: byte;
+   myFile: File of TSavedGameF;
+   savedGame: TSavedGameF;
+begin
+   sgListGames.RowCount := 2;
+   for i := 0 to 4 do
+      sgListGames.Cells[i, 1] := '';
+   n := 1;
+   if NumberOfForms > 0 then
+      for i := 0 to (NumberOfForms - 1) do
+         if  (Checkers[i] <> nil) and not Checkers[i].Active then
+            with sgListGames do
+            begin
+               RowCount := n + 1;
+               Cells[0, n] := 'Игра ' + IntToStr(i + 1);
+               if Checkers[i].forOne then
+                  case Checkers[i].maxDepth of
+                     0: Cells[1, n] := 'Новичок';
+                     2: Cells[1, n] := 'Любитель';
+                     4: Cells[1, n] := 'Бывалый';
+                     6: Cells[1, n] := 'Эксперт';
+                  end
+               else
+                  Cells[1, n] := 'На двоих';
+               if Checkers[i].GameEnd then
+                  Cells[2, n] := 'Завершена'
+               else
+                  Cells[2, n] := 'Не завершена';
+               Cells[3, n] := Checkers[i].FormClock.TimeLabel.Caption;
+               Cells[4, n] := TimeToStr(Checkers[i].FormClock.StartTime);
+               inc(n);
+            end;
+    AssignFile(myFile, 'SavedGames.txt');
+    Reset(myFile);
+    number := FileSize(myFile);
+    if (number > 0) then
+    begin
+    with sgListGames do
+    begin
+    Font.Color:= clRed;
+    for i := 0 to number - 1 do
+    begin
+      RowCount := n + 1;
+      seek(myFile, i);
+      read(myFile, savedGame);
+    end;
+    end;
+    CloseFile(myFile);
+    end;
+end;
+
+procedure TFormListGames.RemoveClick(Sender: TObject);
+var
+   i: byte;
+begin
+   with sgListGames do
+   begin
+      if Cells[0, row] <> '' then
+      begin
+         i := StrToInt(Cells[0, row][6]) - 1;
+         Checkers[i].Close;
+         FormShow(nil);
+      end;
+   end;
+end;
+
+procedure TFormListGames.RemoveLabelClick(Sender: TObject);
+begin
+   RemoveClick(nil);
+end;
+
+procedure TFormListGames.UpDataClick(Sender: TObject);
+begin
+   FormShow(nil);
+end;
+
+procedure TFormListGames.UpDataLabelClick(Sender: TObject);
+begin
+   FormShow(nil);
+end;
+
+end.

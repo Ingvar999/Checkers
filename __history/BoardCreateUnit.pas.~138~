@@ -1,0 +1,1109 @@
+unit BoardCreateUnit;
+
+interface
+
+uses
+   Windows, Messages, SysUtils, Variants, Classes, Graphics, Controls, Forms,
+   Dialogs, ExtCtrls, StdCtrls, Menus, CheckersLib, ClockUnit, MenuUnit,
+   ReadNameUnit;
+
+type
+   TCheckers = class(TForm)
+      MainMenu: TMainMenu;
+      FonBoardImage: TImage;
+      ImgBoard: TImage;
+      CloseGame: TMenuItem;
+      Restart: TMenuItem;
+      DelayingGame: TMenuItem;
+      Help: TMenuItem;
+      Clock_on_off: TMenuItem;
+      MoveBack: TMenuItem;
+      Game: TMenuItem;
+      HelpProgram: TMenuItem;
+      HelpRule: TMenuItem;
+      SaveGame: TMenuItem;
+      CheckersMenu: TMenuItem;
+      procedure SaveGameClick(Sender: TObject);
+      procedure CheckersMenuClick(Sender: TObject);
+      procedure HelpProgramClick(Sender: TObject);
+      procedure HelpRuleClick(Sender: TObject);
+      procedure MoveBackClick(Sender: TObject);
+      procedure Clock_on_offClick(Sender: TObject);
+      procedure DelayingGameClick(Sender: TObject);
+      procedure CloseGameClick(Sender: TObject);
+      procedure FormActivate(Sender: TObject);
+      procedure RestartClick(Sender: TObject);
+      procedure FormClose(Sender: TObject; var Action: TCloseAction);
+      procedure FormCreate(Sender: TObject);
+      procedure ImgBoardClick(Sender: TObject);
+      procedure CheckerClick(Sender: TObject);
+   private 
+      White, Black: TTeam;
+      board: TBoard;
+      current: TImage;
+      beat, newKing, possibilityBack: boolean;
+      lastAlpha, number: shortint;
+      SavedGame, SavedCurrentGame: TSavedGame;
+      procedure FormMove(var message: TMessage); message WM_MOVING;
+      procedure Frame(x, y: word; const Color: TColor);
+      procedure Clear();
+      procedure CheckerMove(const x, y: byte; const highlight: boolean);
+      procedure All_Block_Action();
+      function CheckGameOver(const badge: byte): boolean;
+      function FirstBeat(const act: byte; var board: TBoard): boolean;
+      procedure PossibleMoves(x, y: byte);
+      function BeatSeries(var board: TBoard; j, i: byte): boolean;
+      procedure VariantMove(x, y, x0, y0: smallint);
+      procedure ComputerMove();
+      procedure SaveCurrentGame();
+      procedure PlacementCheckers(const board: TBoard);
+      procedure CreateFromFile();
+   public 
+      oldX, oldY: integer;
+      FormClock: TFormClock;
+      act: byte;
+      maxDepth: array[1..2] of byte;
+      forOne, GameEnd, Active: boolean;
+      procedure ComputerGame(var Msg: TWMKey; var Handled: Boolean);
+   end;
+
+var
+   curForm: byte;
+   Checkers: array of TCheckers;
+   statistick: record
+      number, whiteWin, blackWin, nichja: word;
+   end;
+
+implementation
+
+{$R *.dfm}
+
+{ 0 - пустая клетка
+  1 - белая шашка
+  2 - чёрная шашка
+  3 - бьющая белая шашка
+  4 - бьющая чёрная шашка
+  5 - белая дамка
+  6 - чёрная дамка
+  7 - бьющая белая дамка
+  8 - бьющая чёрная дамка
+  9 - возможный ход }
+
+const
+   BoardColor = clBlack;
+
+var
+   StartGame: TSavedGame;
+
+//рисование рамки на ячейке доски
+procedure TCheckers.Frame(x, y: word; const Color: TColor);
+begin
+   x := x * 70;
+   y := y * 70;
+   with ImgBoard.Canvas do
+   begin
+      Brush.Color := Color;
+      FrameRect(Rect(x + 1, y + 1, x + 69, y + 69));
+      FrameRect(Rect(x + 2, y + 2, x + 68, y + 68));
+   end;
+end;
+
+procedure TCheckers.HelpRuleClick(Sender: TObject);
+begin
+   MessageBox(0, PChar(helpRuleText),
+            PChar('Справка'), MB_OK);
+end;
+
+//очищение матрицы от меток возможных ходов и подсвечивающихся рамок на доске
+procedure TCheckers.Clear();
+var
+   i, j: byte;
+begin
+   for i := 0 to 7 do
+      for j := 0 to 7 do
+         if board[i, j] = 9 then
+         begin
+            board[i, j] := 0;
+            Frame(j, i, BoardColor);
+         end;
+end;
+
+procedure TCheckers.Clock_on_offClick(Sender: TObject);
+begin
+   if FormClock.Visible then
+   begin
+      FormClock.Visible := false;
+      Clock_on_off.Caption := 'Часы (выкл.)';
+   end
+   else
+   begin
+      FormClock.Visible := true;
+      Checkers[curForm].BringToFront;
+      Clock_on_off.Caption := 'Часы (вкл.)';
+   end;
+end;
+
+procedure AllForm_Block_Action();
+var
+   i: byte;
+begin
+   for i := 0 to NumberOfForms - 1 do
+      if (Checkers[i] <> nil) and (Checkers[i].Active) then
+         with Checkers[i] do
+            Enabled := not Enabled;
+end;
+
+//перемещение текущей шашки на новою позицию
+procedure TCheckers.CheckerMove(const x, y: byte; const highlight: boolean);
+var
+   x0, y0, border, badge, i: byte;
+   a, b, currentAlpha: shortint;
+   posX, posY: word;
+begin
+   AllForm_Block_Action();
+   currentAlpha := Alpha(board);
+   if currentAlpha = lastAlpha then
+      inc(number)
+      else
+   begin
+      number := 0;
+      lastAlpha := currentAlpha;
+   end;
+   if number = 25 then
+   begin
+      if statistick.number = 0 then
+         MessageBox(0, PChar('НИЧЬЯ!'),
+         PChar('Игра окончена'), MB_OK)
+      else
+         inc(statistick.nichja);
+      FormClock.TimerClock.Enabled := false;
+      All_Block_Action();
+      GameEnd := true;
+      Exit;
+   end;
+   with Current do
+   begin
+      BringToFront;
+      x0 := (Left - 30) div 70;
+      y0 := (Top - 30) div 70;
+      badge := board[y0, x0];
+      if (badge mod 2 = 0) then
+         border := 7
+      else
+         border := 0;
+      board[y0, x0] := 0;
+      if (badge = 8) or (badge = 4) or (badge = 3) or (badge = 7) then
+         badge := badge - 2;
+      posY := y * 70 + 30;
+      posX := x * 70 + 30;
+      if highlight then
+      begin
+         Frame(x, y, BoardColor);
+         Frame(x0, y0, BoardColor);
+      end;
+      //анимация
+      a := round((posX - Left) / 20);
+      b := round((posY - Top) / 20);
+      for i := 1 to 17 do
+      begin
+         Top := Top + b;
+         Left := Left + a;
+         //if statistick.number = 0 then
+            Delay(20);
+      end;
+      Left := posX;
+      Top := posY;
+      Delay(100);
+      //если шашака достигла края, делаем её дамкой
+      if (y = border) and (badge < 5) then
+      begin
+         if badge = 1 then
+            Current.Picture.LoadFromFile('WhiteK.bmp')
+         else
+            Current.Picture.LoadFromFile('BlackK.bmp');
+         Current.Transparent := true;
+         board[y, x] := badge + 4;
+         newKing := true;
+      end
+      else
+      begin
+         board[y, x] := badge;
+         newKing := false;
+      end;
+   end;
+   AllForm_Block_Action();
+end;
+
+procedure TCheckers.CheckersMenuClick(Sender: TObject);
+begin
+   MenuUnit.CheckersMenu.BringToFront;
+end;
+
+//блокируем\активируем все объекты
+procedure TCheckers.All_Block_Action();
+var
+   i: byte;
+begin
+   with Checkers[curForm] do
+   begin
+      imgBoard.Enabled := not imgBoard.Enabled;
+      for i := 0 to 11 do
+      begin
+         if Black[i] <> nil then
+            Black[i].Enabled := not Black[i].Enabled;
+         if White[i] <> nil then
+            White[i].Enabled := not White[i].Enabled;
+      end;
+   end;
+end;
+
+//проверка на окончание игры
+function TCheckers.CheckGameOver(const badge: byte): boolean;
+var
+   Winer: String;
+begin
+   if  CheckGameOverTeam(badge, board) then
+   begin
+      result := true;
+      GameEnd := true;
+      FormClock.TimerClock.Enabled := false;
+      if badge = 1 then
+      begin
+         Winer := 'ЧЁРНЫХ';
+         inc(statistick.blackWin);
+      end
+      else
+      begin
+         Winer := 'БЕЛЫХ';
+         inc(statistick.whiteWin);
+      end;
+      if statistick.number = 0 then
+         MessageBox(0, PChar('Победила команда ' + Winer + ' шашек!!!'),
+         PChar('Игра окончена'), MB_OK);
+      All_Block_Action();
+   end
+   else
+      result := false;
+end;
+
+//проверяет одно направление шашки на возможность взятия
+function VariantBeat(i, j, pas, i0, j0: smallint; highlight: boolean;
+var board: TBoard): boolean;
+begin
+   if (i + 2 * i0 <= 7) and (i + 2 * i0 >= 0) and (j + 2 * j0 <= 7)
+    and (j + 2 * j0 >= 0) and ((board[i + i0, j + j0] = pas) or
+    (board[i + i0, j + j0] = pas + 4)) and (board[i + 2 * i0, j + 2 * j0] = 0) then
+   begin
+      result := true;
+      if highlight then
+      begin
+         board[i + 2 * i0, j + 2 * j0] := 9;
+         Checkers[curForm].Frame( j + 2 * j0, i + 2 * i0, clLime);
+      end;
+   end
+   else
+      result := false;
+end;
+
+//проверяет одно направление дамки на возможность взятия
+function VariantBeatKing(i, j, pas, i0, j0: smallint; highlight: boolean;
+var board: TBoard): boolean;
+begin
+   result := false;
+   if (i + i0 >= 0) and (i + i0 <= 7) and (j + j0 <= 7) and (j + j0 >= 0) then
+   begin
+      i := i + i0;
+      j := j + j0;
+      while (i > 0) and (i < 7) and (j < 7) and (j > 0) and (board[i, j] = 0) do
+      begin
+         i := i + i0;
+         j := j + j0;
+      end;
+      if (board[i, j] = pas) or (board[i, j] = pas + 4) then
+      begin
+         i := i + i0;
+         j := j + j0;
+         if (i >= 0) and (i <= 7) and (j <= 7) and (j >= 0) and (board[i, j] = 0) then
+            result := true;
+         if highlight then
+            while (i >= 0) and (i <= 7) and (j <= 7) and (j >= 0) and (board[i, j] = 0) do
+            begin
+               Checkers[curForm].Frame(j, i, clLime);
+               board[i, j] := 9;
+               i := i + i0;
+               j := j + j0;
+            end;
+      end;
+   end;
+end;
+
+//Проверяет на возможность взятий одной из сторон, если да, помечает бьющие шашки
+function TCheckers.FirstBeat(const act: byte; var board: TBoard): boolean;
+var
+   i, j, pas: byte;
+begin
+   result := false;
+   pas := act mod 2 + 1;
+   for i := 0 to 7 do
+      for j := 0 to 7 do
+         if board[i, j] = act then
+         begin
+            if VariantBeat(i, j, pas, -1, -1, false, board)
+                or VariantBeat(i, j, pas, -1, 1, false, board)
+                or VariantBeat(i, j, pas, 1, -1, false, board)
+                or VariantBeat(i, j, pas, 1, 1, false, board) then
+            begin
+               board[i, j] := board[i, j] + 2;
+               result := true;
+            end;
+         end
+         else
+         if board[i, j] = act + 4 then
+            if VariantBeatKing(i, j, pas, -1, -1, false, board)
+                or VariantBeatKing(i, j, pas, -1, 1, false, board)
+                or VariantBeatKing(i, j, pas, 1, -1, false, board)
+                or VariantBeatKing(i, j, pas, 1, 1, false, board) then
+            begin
+               board[i, j] := board[i, j] + 2;
+               result := true;
+            end;
+end;
+
+//Проверяет на повторное взятие текущей шашкой
+function TCheckers.BeatSeries(var board: TBoard; j, i: byte): boolean;
+var
+   pas, act: byte;
+begin
+   result := false;
+   if not newKing then
+   begin
+      if Current <> nil then
+      begin
+         i := Current.Top div 70;
+         j := (Current.Left - 30) div 70;
+      end;
+      act := board[i, j];
+      pas := act mod 2 + 1;
+      if act < 3 then
+      begin
+         if VariantBeat(i, j, pas, -1, -1, false, board)
+           or VariantBeat(i, j, pas, -1, 1, false, board)
+           or VariantBeat(i, j, pas, 1, -1, false, board)
+           or VariantBeat(i, j, pas, 1, 1, false, board) then
+         begin
+            board[i, j] := act + 2;
+            result := true;
+         end;
+      end
+      else
+      if VariantBeatKing(i, j, pas, -1, -1, false, board)
+       or VariantBeatKing(i, j, pas, -1, 1, false, board)
+       or VariantBeatKing(i, j, pas, 1, -1, false, board)
+       or VariantBeatKing(i, j, pas, 1, 1, false, board) then
+      begin
+         board[i, j] := act + 2;
+         result := true;
+      end;
+   end
+   else
+      newKing := false;
+end;
+
+//осуществление хода компьютера
+procedure TCheckers.ComputerMove();
+var
+   betweenx, betweeny, pas: byte;
+   decision: TMove;
+   beatRes: boolean;
+   actTeam, pasTeam: TTeam;
+   
+   // Возвращает оценку наилучшего хода (рекурсивная)
+   function RecursiveMove(board1: TBoard; const act1, depth: byte): shortint;
+   var
+      i, pas, border, betweenx, betweeny, temp1, temp2: byte;
+      moves: TMoves;
+      alphas: array of shortint;
+      a, k: shortint;
+      beat1: boolean;
+   begin
+      if act1 = 1 then
+      begin
+         border := 0;
+         a := -1
+      end
+      else
+      begin
+         border := 7;
+         a := 1;
+      end;
+      pas := act1 mod 2 + 1;
+      k := 0;
+      if not beatRes then
+         beat1 := FirstBeat(act1, board1)
+      else
+         beat1 := true;
+      GenerateMoves(board1, act1, pas, k, a, moves, beat1);
+      beatRes := false;
+      if (depth = 1) and (k = 1) then
+         decision := moves[0]
+      else
+      begin
+         SetLength(alphas, k);
+         if (k > 0) then
+         begin
+            for i := 0 to k - 1 do
+            begin
+               with moves[i] do
+               begin
+                  //делаем один из возможных ходов
+                  temp1 := board1[y1, x1];
+                  board1[y2, x2] := temp1;
+                  board1[y1, x1] := 0;
+                  if (board1[y2, x2] = act1) and (y2 = border) then
+                  begin
+                     board1[y2, x2] := act1 + 4;
+                     newKing := true;
+                  end
+                  else
+                     newKing := false;
+                  if beat1 then
+                  begin
+                     //"убираем" сбитую шашку
+                     SeekVictim(x1, y1, x2, y2, pas, board1, betweenx, betweeny);
+                     temp2 := board1[betweeny, betweenx];
+                     board1[betweeny, betweenx] := 0;
+                     beatRes := BeatSeries(board1, x2, y2);
+                  end;
+                  //записываем в alphas оценки возможных ходов
+                  if beatRes then
+                     alphas[i] := RecursiveMove(board1, act1, depth)
+                  else
+                  if depth < maxDepth[act] then
+                     alphas[i] := -RecursiveMove(board1, pas, depth + 1)
+                  else
+                     alphas[i] := (-1 + 2 * (act1 mod 2)) * Alpha(board1);
+                  //возвращаем всё в исходное положение
+                  beatRes := false;
+                  board1[y1, x1] := temp1;
+                  board1[y2, x2] := 0;
+                  if beat1 then
+                     board1[betweeny, betweenx] := temp2;
+               end;
+            end;
+            //ищем наилучшую оценку
+            temp1 := random(k);
+            result := alphas[temp1];
+            if depth = 1 then
+               decision := moves[temp1];
+            for i := 0 to k - 1 do
+               if alphas[i] > result then
+               begin
+                  result := alphas[i];
+                  if depth = 1 then
+                     // сохраняем наилучший ход
+                     decision := moves[i];
+               end;
+         end
+         else
+         // если у игрока совсем нет возможных ходов
+            result := 4 * (-1 + 2 * (act1 mod 2)) * Alpha(board1);
+      end;
+      //сохраняем значение beat1
+      if depth = 1 then
+         beatRes := beat1
+   end;
+
+begin
+   current := nil;
+   beatRes := false;
+   if act = 1 then
+   begin
+      pas := 2;
+      actTeam := White;
+      pasTeam := Black;
+   end
+   else
+   begin
+      pas := 1;
+      actTeam := Black;
+      pasTeam := White;;
+   end;
+   repeat
+      RecursiveMove(board, act, 1);
+      beat := beatRes;
+      if not beat and CheckGameOver(act) then
+      begin
+         beat := true;
+         Exit;
+      end;
+      with decision do
+      begin
+         Current := actTeam[SeekChecker(x1, y1, actTeam)];
+         CheckerMove(x2, y2, false);
+         if beat then
+         // "убираем" сбитую шашку
+         begin
+            SeekVictim(x1, y1, x2, y2, pas, board, betweenx, betweeny);
+            board[betweeny, betweenx] := 0;
+            pasTeam[SeekChecker(betweenx, betweeny, pasTeam)].Free;
+            pasTeam[SeekChecker(betweenx, betweeny, pasTeam)] := nil;
+            beat := false;
+            beat := BeatSeries(board, 0, 0);
+         end;
+         Current := nil;
+      end;
+      //повтор в случае комбинированого взятия
+   until not beat;
+   act := pas;
+end;
+
+//проверяет одно направление дамки на возможность хода
+procedure TCheckers.VariantMove(x, y, x0, y0: smallint);
+begin
+   x := x + x0;
+   y := y + Y0;
+   while (x <= 7) and (x >= 0) and (y <= 7) and (y >= 0) and (board[y, x] = 0) do
+   begin
+      board[y, x] := 9;
+      Frame(x, y, clLime);
+      x := x + x0;
+      y := y + Y0;
+   end;
+end;
+
+//помечает все возможные ходы выбранной шашки
+procedure TCheckers.PossibleMoves(x, y: byte);
+begin
+   if board[y, x] = act then
+   begin
+      if act = 2 then
+         inc(y)
+      else
+         dec(y);
+      if (x > 0) and (board[y, x - 1] = 0) then
+      begin
+         Frame(x - 1, y, clLime);
+         board[y, x - 1] := 9;
+      end;
+      if (x < 7)  and (board[y, x + 1] = 0) then
+      begin
+         Frame(x + 1, y, clLime);
+         board[y, x + 1] := 9;
+      end;
+   end
+   else
+   begin
+      VariantMove(x, y, -1, -1);
+      VariantMove(x, y, -1, 1);
+      VariantMove(x, y, 1, -1);
+      VariantMove(x, y, 1, 1);
+   end;
+end;
+
+//при нажатии нажатии на шашку
+procedure TCheckers.CheckerClick(Sender: TObject);
+var
+   x, y, pas: byte;
+begin
+   //если какая-то шашка была выбрана до этого, то убираем её подсветку
+   if Current <> nil then
+   begin
+      Clear();
+      Frame((Current.Left - 30) div 70, Current.Top div 70, BoardColor);
+   end;
+   x := ((Sender as TImage).Left - 30) div 70;
+   y := (Sender as TImage).Top div 70;
+   //если выбранная шашка из нужной команды, то помечаем её возможные ходы
+   if (board[y, x] = act) or (board[y, x] = act + 2)
+    or (board[y, x] = act + 4) or (board[y, x] = act + 6) then
+   begin
+      Current := (Sender as TImage);
+      pas := act mod 2 + 1;
+      Frame(x, y, clLime);
+      if beat then
+      begin
+         if board[y, x] = act + 2 then
+         begin
+            VariantBeat(y, x, pas, -1, -1, true, board);
+            VariantBeat(y, x, pas, -1, 1, true, board);
+            VariantBeat(y, x, pas, 1, -1, true, board);
+            VariantBeat(y, x, pas, 1, 1, true, board);
+         end
+         else
+         if board[y, x] = act + 6 then
+         begin
+            VariantBeatKing(y, x, pas, -1, -1, true, board);
+            VariantBeatKing(y, x, pas, -1, 1, true, board);
+            VariantBeatKing(y, x, pas, 1, -1, true, board);
+            VariantBeatKing(y, x, pas, 1, 1, true, board)
+         end;
+      end
+      else
+         PossibleMoves(x, y);
+   end;
+end;
+
+//при нажатии на пустую ячейку доски
+procedure TCheckers.ImgBoardClick(Sender: TObject);
+var
+   x, y, x0, y0, betweenx, betweeny, i, j, pas: byte;
+begin
+   x := (Mouse.CursorPos.x - 30 -  Checkers[curForm].Left) div 70;
+   y := (Mouse.CursorPos.y - 80 -  Checkers[curForm].Top) div 70;
+   if Current <> nil then
+   //если у нас до этого была выбрана шашка
+   begin
+      x0 := (Current.Left - 30) div 70;
+      y0 :=  Current.Top div 70;
+      if board[y, x] = 9 then
+      //если мы можем походить на выбрвнну позицию
+      begin
+         pas := act mod 2 + 1;
+         Clear();
+         CheckerMove(x, y, true);
+         if beat then
+         //"убираем" сбитую шашаку
+         begin
+            SeekVictim(x, y, x0, y0, pas, board, betweenx, betweeny);
+            if act = 1 then
+            begin
+               Black[SeekChecker(betweenx, betweeny, Black)].Free;
+               Black[SeekChecker(betweenx, betweeny, Black)] := nil;
+            end
+            else
+            begin
+               White[SeekChecker(betweenx, betweeny, White)].Free;
+               White[SeekChecker(betweenx, betweeny, White)] := nil;
+            end;
+            board[betweeny, betweenx] := 0;
+            beat := false;
+            //убираем метки бьющих шашек
+            for i := 0 to 7 do
+               for j := 0 to 7 do
+                  if (board[i, j] = act + 2) or (board[i, j] = act + 6) then
+                     board[i, j] := board[i, j] - 2;
+            beat := BeatSeries(board, 0, 0);
+            if beat then
+               CheckerClick(Current);
+         end
+         else
+            Current := nil;
+         //если нет комбинированого взятия
+         if not beat then
+            if forOne then
+            begin
+               //ход компьютера
+               act := pas;
+               ComputerMove();
+               if possibilityBack then
+                  SavedGame := SavedCurrentGame;
+               beat := FirstBeat(act, board);
+               SaveCurrentGame();
+               if not beat and CheckGameOver(act) then
+                  Exit;
+            end
+            else
+            begin
+               //передача хода противнику
+               act := pas;
+               beat := FirstBeat(act, board);
+               if possibilityBack then
+                  SavedGame := SavedCurrentGame;
+               SaveCurrentGame();
+               if not beat and CheckGameOver(act) then
+                  Exit;
+            end;
+      end
+      else
+      //если туда ходить нельзя
+      begin
+         Frame(x0, y0, BoardColor);
+         Current := nil;
+         Clear();
+      end;
+   end;
+end;
+
+procedure TCheckers.PlacementCheckers(const board: TBoard);
+var
+   i, j, b, w: integer;
+begin
+   for i := 0 to 11 do
+   begin
+      if White[i] <> nil then
+      begin
+         White[i].Free;
+         White[i] := nil;
+      end;
+      if Black[i] <> nil then
+      begin
+         Black[i].Free;
+         Black[i] := nil;
+      end;
+   end;
+   w := 0;
+   b := 0;
+   for i := 0 to 7 do
+      for j := 0 to 7 do
+      begin
+         if (board[i, j] = 1) or (board[i, j] = 3)
+            or (board[i, j] = 5) or (board[i, j] = 7) then
+         begin
+            White[w] := TImage.Create(self);
+            with White[w] do
+            begin
+               Parent := self;
+               Top := 30 + i * 70;
+               Left := j * 70 + 30;
+               Height := 70;
+               Width := 70;
+               OnClick := CheckerClick;
+               if (board[i, j] = 1) or (board[i, j] = 3) then
+                  Picture.LoadFromFile('WhiteC.bmp')
+               else
+                  Picture.LoadFromFile('WhiteK.bmp');
+               Transparent := true;
+            end;
+            inc(w);
+         end
+            else
+         if (board[i, j] = 2) or (board[i, j] = 4)
+            or (board[i, j] = 6) or (board[i, j] = 8) then
+         begin
+            Black[b] := TImage.Create(self);
+            with Black[b] do
+            begin
+               Parent := self;
+               Top := 30 + i * 70;
+               Left := j * 70 + 30;
+               Height := 70;
+               Width := 70;
+               OnClick := CheckerClick;
+               if (board[i, j] = 2) or (board[i, j] = 4) then
+                  Picture.LoadFromFile('BlackC.bmp')
+               else
+                  Picture.LoadFromFile('BlackK.bmp');
+               Transparent := true;
+            end;
+            inc(b);
+         end;
+      end;
+end;
+
+procedure TCheckers.MoveBackClick(Sender: TObject);
+begin
+   if possibilityBack then
+   begin
+      if Current <> nil then
+      begin
+         Frame((Current.Left - 30) div 70, Current.Top div 70, BoardColor);
+         Clear();
+      end;
+      with SavedGame do
+      begin
+         act := actS;
+         board := boardS;
+         beat := beatS;
+         number := numberS;
+         lastAlpha := lastAlphaS;
+      end;
+      PlacementCheckers(board);
+      possibilityBack := false;
+   end;
+end;
+
+procedure TCheckers.SaveGameClick(Sender: TObject);
+var
+   myFile: file of TSavedGameF;
+   savedGameF: TSavedGameF;
+begin
+   ReadName.ShowModal;
+   if (ReadName.NameEdit.Text <> '') then
+   begin
+      Clear();
+      with savedGameF do
+      begin
+         boardS := board;
+         actS := act;
+         maxDepthS := maxDepth[2];
+         forOneS := forOne;
+         lastAlphaS := lastAlpha;
+         numberS := number;
+         beatS := beat;
+         GameEndS := GameEnd;
+         duration := FormClock.TimeLabel.Caption;
+         StartTimeS := FormClock.StartTime;
+         name := ReadName.NameEdit.Text;
+      end;
+      ReadName.NameEdit.Text := '';
+      AssignFile(myFile, 'SavedGames.txt');
+      reset(myFile);
+      seek(myFile, FileSize(myFile));
+      write(myFile, savedGameF);
+      CloseFile(myFile);
+      MessageBox(0, PChar('Игра успешно сохранена!'),
+            PChar('Сообщение'), MB_OK);
+   end;
+end;
+
+procedure TCheckers.SaveCurrentGame();
+begin
+   possibilityBack := true;
+   with SavedCurrentGame do
+   begin
+      actS := act;
+      beatS := beat;
+      boardS := board;
+      numberS := number;
+      LastAlphaS := LastAlpha;
+   end;
+end;
+
+procedure TCheckers.HelpProgramClick(Sender: TObject);
+begin
+   MessageBox(0, PChar(helpProgramText),
+            PChar('Справка'), MB_OK);
+end;
+
+procedure TCheckers.DelayingGameClick(Sender: TObject);
+begin
+   Active := false;
+   Visible := false;
+   FormClock.Visible := false;
+   FormClock.TimerClock.Enabled := false;
+end;
+
+procedure TCheckers.CloseGameClick(Sender: TObject);
+begin
+   Checkers[curForm].Close;
+end;
+
+procedure TCheckers.RestartClick(Sender: TObject);
+var
+   Res: integer;
+begin
+   if not GameEnd then
+      Res := MessageBox(Self.Handle
+            , PChar('Вы точно хотите начать игру заново?')
+            , PChar('Подтверждение')
+            , MB_YESNO + MB_ICONINFORMATION + MB_APPLMODAL)
+   else
+   begin
+      Res := IDYES;
+      ImgBoard.Enabled := true;
+      FormClock.TimerClock.Enabled := true;
+      GameEnd := false;
+      FormClock.TimerClock.Enabled := true;
+   end;
+   if Res = IDYES then
+   begin
+      SavedGame := startGame;
+      possibilityBack := true;
+      MoveBackClick(nil);
+      possibilityBack := false;
+      act := 1;
+      FormClock.StartTime := Time;
+   end;
+end;
+
+procedure TCheckers.FormActivate(Sender: TObject);
+begin
+   curForm := 0;
+   while Checkers[curForm] <> (Sender as TCheckers)  do
+      inc(curForm);
+end;
+
+procedure TCheckers.FormClose(Sender: TObject; var Action: TCloseAction);
+var
+   Res: integer;
+begin
+   Action := caNone;
+   if not GameEnd then
+      Res := MessageBox(Self.Handle
+            , PChar('Вы точно хотите закончить текущую игру?')
+            , PChar('Подтверждение')
+            , MB_YESNO + MB_ICONINFORMATION + MB_APPLMODAL)
+   else
+      Res := IDYES;
+   if Res = IDYES then
+   begin
+      Checkers[curForm].FormClock.Free;
+      Checkers[curForm].Free;
+      Checkers[curForm] := nil;
+   end;
+end;
+
+procedure TCheckers.FormMove(var message: TMessage);
+begin
+   FormClock.Left := FormClock.Left + Left - oldX;
+   FormClock.Top := FormClock.Top + Top - oldY;
+   oldX := Left;
+   oldY := Top;
+end;
+
+procedure TCheckers.ComputerGame(var Msg: TWMKey; var Handled: Boolean);
+var
+   i: word;
+begin
+   if Msg.CharCode = 13 then
+      for i := 1 to statistick.number do
+      begin
+         while not GameEnd do
+            ComputerMove();
+         RestartClick(nil);
+      end;
+   with statistick do
+      MessageBox(0, PChar('Всего ' + IntToStr(number) + #10#13 +
+      'Белые ' + IntToStr(whiteWin) + #10#13 +
+      'Чёрные ' + IntToStr(blackWin) + #10#13 +
+      'Ничьи ' + IntToStr(nichja)),
+            PChar('Статистика'), MB_OK);
+   gameEnd := true;
+   Close;
+end;
+
+procedure TCheckers.CreateFromFile();
+var
+   myFile: file of TSavedGameF;
+   savedGameF: TSavedGameF;
+begin
+   AssignFile(myFile, 'SavedGames.txt');
+   Reset(myFile);
+   seek(myFile, MenuUnit.numberOfRecord);
+   read(myFile, savedGameF);
+   CloseFile(myFile);
+   with SavedGameF do
+   begin
+      board := boardS;
+      act := actS;
+      maxDepth[2] := maxDepthS;
+      forOne := forOneS;
+      lastAlpha := lastAlphaS;
+      number := numberS;
+      beat := beatS;
+      GameEnd := GameEndS;
+      FormClock.TimeLabel.Caption := duration;
+      FormClock.StartTime := Time - StrToTime(duration);
+      Caption := 'Шашки - ' + name;
+   end;
+end;
+
+procedure TCheckers.FormCreate(Sender: TObject);
+var
+   i, j: byte;
+   lbl: array[0..31] of TLabel;
+begin
+   Randomize;
+   SetLength(White, 12);
+   SetLength(Black, 12);
+   FonBoardImage.Picture.LoadFromFile('FonBoard.bmp');
+   DoubleBuffered := True;
+   Active := true;
+   newKing := false;
+   Application.CreateForm(TFormClock, FormClock);
+   //размещение надписей на рамке доски
+   for I := 0 to 7 do
+   begin
+      lbl[i] := TLabel.Create(self);
+      with lbl[i] do
+      begin
+         Parent := self;
+         Transparent := true;
+         Font.Color := Gold;
+         Top := 58 + i * 70;
+         Left := 10;
+         Caption := IntToStr(8 - i);
+      end;
+      lbl[i + 8] := TLabel.Create(self);
+      with lbl[i + 8] do
+      begin
+         Parent := self;
+         Transparent := true;
+         Font.Color := Gold;
+         Top := 58 + i * 70;
+         Left := 600;
+         Caption := IntToStr(8 - i);
+      end;
+      lbl[i + 16] := TLabel.Create(self);
+      with lbl[i + 16] do
+      begin
+         Parent := self;
+         Transparent := true;
+         Font.Color := Gold;
+         Top := 598;
+         Left := 60 + i * 70;
+         Caption := chr(65 + i);
+      end;
+      lbl[i + 24] := TLabel.Create(self);
+      with lbl[i + 24] do
+      begin
+         Parent := self;
+         Transparent := true;
+         Font.Color := Gold;
+         Top := 8;
+         Left := 60 + i * 70;
+         Caption := chr(65 + i);
+      end;
+   end;
+   //рисование доски
+   with ImgBoard.Canvas do
+   begin
+      Brush.Color := BoardColor;
+      for I := 0 to 8 do
+      begin
+         if i mod 2 = 0 then
+            j := 1
+         else
+            j := 0;
+         while j < 8 do
+         begin
+            Rectangle(j * 70, i * 70, (j + 1) * 70, (i + 1) * 70);
+            j := j + 2;
+         end;
+      end;
+   end;
+   if MenuUnit.newGame then
+   begin
+      GameEnd := false;
+      lastAlpha := -10;
+      beat := false;
+      for I := 0 to 7 do
+         for j := 0 to 7 do
+            board[i, j] := 0;
+      //размещение белых шашек
+      for i := 5 to 7 do
+      begin
+         if i mod 2 = 0 then
+            j := 1
+         else
+            j := 0;
+         while j < 8 do
+         begin
+            board[i, j] := 1;
+            j := j + 2;
+         end;
+      end;
+      //размещение чёрных шашек
+      for i := 0 to 2 do
+      begin
+         if i mod 2 = 0 then
+            j := 1
+         else
+            j := 0;
+         while j < 8 do
+         begin
+            board[i, j] := 2;
+            j := j + 2;
+         end;
+      end;
+   end
+   else
+      CreateFromFile();
+   PlacementCheckers(board);
+   SaveCurrentGame();
+   SavedGame := SavedCurrentGame;
+   StartGame := SavedCurrentGame;
+   possibilityBack := false;
+end;
+
+end.
